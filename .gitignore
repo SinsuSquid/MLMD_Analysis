@@ -1,3 +1,5 @@
+./dat/
+*.dat
 # Prerequisites
 *.d
 
