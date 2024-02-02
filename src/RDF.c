@@ -24,8 +24,12 @@ int readTraj(void);
 double *radial(int);
 double *radial_type(int, int, int);
 
-int main(void){
-	FILE *fp_out = fopen("./dat/RDF.dat", "w");
+FILE *fp_in;
+FILE *fp_out;
+
+int main(int argc, char *argv[]){
+	fp_in = fopen(argv[1], "r");
+	fp_out = fopen(argv[2], "w");
 
 	atom = (int***)malloc(sizeof(int**) * MAXTIMESTEP);
 	coord = (double***)malloc(sizeof(double**) * MAXTIMESTEP);
@@ -214,9 +218,6 @@ double *radial(int timestep){
 int readTraj(void){
 	char *iostat;
 	char line[LINESIZE];
-
-	FILE *fp_in;
-	fp_in = fopen("./NVT_300K.lammpstrj", "r");
 
 	while(1){
 		iostat = fgets(line, LINESIZE, fp_in);

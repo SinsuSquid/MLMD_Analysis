@@ -18,9 +18,12 @@ double binsize;
 int readTraj(void);
 double *gsrt_type(int, int);
 
-int main(void){
-	FILE *fp_out = fopen("./dat/GSRT.dat", "w");
-	fprintf(fp_out, "#\tt\t100\t500\t1000\t1500\t2000\n");
+FILE *fp_in;
+FILE *fp_out;
+
+int main(int argc, char *argv[]){
+	fp_in = fopen(argv[1], "r");
+	fp_out = fopen(argv[2], "w");
 
 	atom = (int***)malloc(sizeof(int**) * MAXTIMESTEP);
 	coord = (double***)malloc(sizeof(double**) * MAXTIMESTEP);
@@ -119,9 +122,6 @@ double *gsrt_type(int timestep, int type){
 int readTraj(void){
 	char *iostat;
 	char line[LINESIZE];
-
-	FILE *fp_in;
-	fp_in = fopen("./NVT_300K.lammpstrj", "r");
 
 	while(1){
 		iostat = fgets(line, LINESIZE, fp_in);
