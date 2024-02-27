@@ -6,6 +6,7 @@
 #define LINESIZE 256
 #define MAXTIMESTEP 100000
 #define NUMBINS 1000
+#define NUMOUTS 5
 
 int numTraj;
 int timestep[MAXTIMESTEP];
@@ -17,13 +18,24 @@ double binsize;
 
 int readTraj(void);
 double *gsrt_type(int, int);
+double **gsrt_long;
+double **gsrt_short;
 
 FILE *fp_in;
-FILE *fp_out;
+FILE *fp_out_short;
+FILE *fp_out_long;
 
 int main(int argc, char *argv[]){
+	char out_long[LINESIZE];
+	char out_short[LINESIZE];
+	strcpy(out_long, argv[2]);
+	strcat(out_long, "_long");
+	strcpy(out_short, argv[2]);
+	strcat(out_short, "_short");
+
 	fp_in = fopen(argv[1], "r");
-	fp_out = fopen(argv[2], "w");
+	fp_out_short = fopen(out_short, "w");
+	fp_out_long = fopen(out_long, "w");
 
 	atom = (int***)malloc(sizeof(int**) * MAXTIMESTEP);
 	coord = (double***)malloc(sizeof(double**) * MAXTIMESTEP);
@@ -34,34 +46,48 @@ int main(int argc, char *argv[]){
 	printf("\tNumber of Timesteps : %d\n", numTraj);
 	printf("\tNumber of Atoms : %d\n\n", numAtoms[0]);
 
-	double *gsrt_100;
-	gsrt_100 = (double*)malloc(sizeof(double) * NUMBINS);
-	double *gsrt_500;
-	gsrt_500 = (double*)malloc(sizeof(double) * NUMBINS);
-	double *gsrt_1000;
-	gsrt_1000 = (double*)malloc(sizeof(double) * NUMBINS);
-	double *gsrt_1500;
-	gsrt_1500 = (double*)malloc(sizeof(double) * NUMBINS);
-	double *gsrt_2000;
-	gsrt_2000 = (double*)malloc(sizeof(double) * NUMBINS);
+	gsrt_long = (double **)malloc(sizeof(double *) * NUMOUTS);
+	gsrt_short = (double **)malloc(sizeof(double *) * NUMOUTS);
 
-	gsrt_100 = gsrt_type(100, 1);
-	gsrt_500 = gsrt_type(500, 1);
-	gsrt_1000 = gsrt_type(1000, 1);
-	gsrt_1500 = gsrt_type(1500, 1);
-	gsrt_2000 = gsrt_type(2000, 1);
-
-	for (int i = 0; i < NUMBINS; i++){
-		fprintf(fp_out, "%lf\t%lf\t%lf\t%lf\t%lf\t%lf\n", 
-				(i+0.5) * binsize,
-			        gsrt_100[i],
-				gsrt_500[i],
-				gsrt_1000[i],
-				gsrt_1500[i],
-				gsrt_2000[i]);
+	for (int i = 0; i < NUMOUTS; i++){
+		gsrt_short[i] = (double*)malloc(sizeof(double) * NUMBINS);
+		gsrt_long[i] = (double*)malloc(sizeof(double) * NUMBINS);
 	}
 
-	fclose(fp_out);
+	gsrt_short[0] = gsrt_type(2, 1);
+	gsrt_short[1] = gsrt_type(4, 1);
+	gsrt_short[2] = gsrt_type(6, 1);
+	gsrt_short[3] = gsrt_type(8, 1);
+	gsrt_short[4] = gsrt_type(10, 1);
+
+	gsrt_long[0] = gsrt_type(50, 1);
+	gsrt_long[1] = gsrt_type(125, 1);
+	gsrt_long[2] = gsrt_type(250, 1);
+	gsrt_long[3] = gsrt_type(500, 1);
+	gsrt_long[4] = gsrt_type(1000, 1);
+
+	fprintf(fp_out_long, "#\tr\tt=50\tt=125\tt=250\tt=500\tt=1000\n");
+	fprintf(fp_out_short, "#\tr\tt=2\tt=4\tt=6\tt=8\tt=10\n");
+
+	for (int i = 0; i < NUMBINS; i++){
+		fprintf(fp_out_short, "%lf\t%lf\t%lf\t%lf\t%lf\t%lf\n", 
+					(i+0.5) * binsize,
+				        gsrt_short[0][i],
+					gsrt_short[1][i],
+					gsrt_short[2][i],
+					gsrt_short[3][i],
+					gsrt_short[4][i]);
+		fprintf(fp_out_long, "%lf\t%lf\t%lf\t%lf\t%lf\t%lf\n", 
+					(i+0.5) * binsize,
+				        gsrt_long[0][i],
+					gsrt_long[1][i],
+					gsrt_long[2][i],
+					gsrt_long[3][i],
+					gsrt_long[4][i]);
+	}
+
+	fclose(fp_out_long);
+	fclose(fp_out_short);
 
 	free(atom);
 	free(coord);
