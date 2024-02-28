@@ -6,7 +6,6 @@
 #define LINESIZE 256
 #define MAXTIMESTEP 100000
 #define NUMBINS 1000
-#define NUMOUTS 5
 
 int numTraj;
 int timestep[MAXTIMESTEP];
@@ -16,26 +15,18 @@ int ***atom;
 double ***coord;
 double binsize;
 
+double box_x, box_y, box_z;
+double maxDist;
+
 int readTraj(void);
-double *gsrt_type(int, int);
-double **gsrt_long;
-double **gsrt_short;
+double *vanHove(int, int, int);
 
 FILE *fp_in;
-FILE *fp_out_short;
-FILE *fp_out_long;
+FILE *fp_out;
 
 int main(int argc, char *argv[]){
-	char out_long[LINESIZE];
-	char out_short[LINESIZE];
-	strcpy(out_long, argv[2]);
-	strcat(out_long, "_long");
-	strcpy(out_short, argv[2]);
-	strcat(out_short, "_short");
-
 	fp_in = fopen(argv[1], "r");
-	fp_out_short = fopen(out_short, "w");
-	fp_out_long = fopen(out_long, "w");
+	fp_out = fopen(argv[2], "w");
 
 	atom = (int***)malloc(sizeof(int**) * MAXTIMESTEP);
 	coord = (double***)malloc(sizeof(double**) * MAXTIMESTEP);
@@ -46,48 +37,14 @@ int main(int argc, char *argv[]){
 	printf("\tNumber of Timesteps : %d\n", numTraj);
 	printf("\tNumber of Atoms : %d\n\n", numAtoms[0]);
 
-	gsrt_long = (double **)malloc(sizeof(double *) * NUMOUTS);
-	gsrt_short = (double **)malloc(sizeof(double *) * NUMOUTS);
+	box_x = box[0][0][1] - box[0][0][0];
+	box_y = box[0][1][1] - box[0][1][0];
+	box_z = box[0][2][1] - box[0][2][0];
+	maxDist  = box_x * box_x * 0.25; // (0.5 box_x) * (0.5 box_x)
+	maxDist  = box_y * box_y * 0.25;
+	maxDist  = box_z * box_z * 0.25;
 
-	for (int i = 0; i < NUMOUTS; i++){
-		gsrt_short[i] = (double*)malloc(sizeof(double) * NUMBINS);
-		gsrt_long[i] = (double*)malloc(sizeof(double) * NUMBINS);
-	}
-
-	gsrt_short[0] = gsrt_type(2, 1);
-	gsrt_short[1] = gsrt_type(4, 1);
-	gsrt_short[2] = gsrt_type(6, 1);
-	gsrt_short[3] = gsrt_type(8, 1);
-	gsrt_short[4] = gsrt_type(10, 1);
-
-	gsrt_long[0] = gsrt_type(50, 1);
-	gsrt_long[1] = gsrt_type(125, 1);
-	gsrt_long[2] = gsrt_type(250, 1);
-	gsrt_long[3] = gsrt_type(500, 1);
-	gsrt_long[4] = gsrt_type(1000, 1);
-
-	fprintf(fp_out_long, "#\tr\tt=50\tt=125\tt=250\tt=500\tt=1000\n");
-	fprintf(fp_out_short, "#\tr\tt=2\tt=4\tt=6\tt=8\tt=10\n");
-
-	for (int i = 0; i < NUMBINS; i++){
-		fprintf(fp_out_short, "%lf\t%lf\t%lf\t%lf\t%lf\t%lf\n", 
-					(i+0.5) * binsize,
-				        gsrt_short[0][i],
-					gsrt_short[1][i],
-					gsrt_short[2][i],
-					gsrt_short[3][i],
-					gsrt_short[4][i]);
-		fprintf(fp_out_long, "%lf\t%lf\t%lf\t%lf\t%lf\t%lf\n", 
-					(i+0.5) * binsize,
-				        gsrt_long[0][i],
-					gsrt_long[1][i],
-					gsrt_long[2][i],
-					gsrt_long[3][i],
-					gsrt_long[4][i]);
-	}
-
-	fclose(fp_out_long);
-	fclose(fp_out_short);
+	fclose(fp_out);
 
 	free(atom);
 	free(coord);
@@ -97,56 +54,24 @@ int main(int argc, char *argv[]){
 	return 0;
 }
 
-double *gsrt_type(int timestep, int type){
-	int *histogram;
-        histogram = (int*)malloc(sizeof(int) * NUMBINS);
-	int nAtoms = numAtoms[0];
-
-	for (int i = 0; i < NUMBINS; i++) histogram[i] = 0;
-
-	double boxlength[3];
-	boxlength[0] = (box[timestep][0][1] - box[timestep][0][0]) / 2.0;
-	boxlength[1] = (box[timestep][1][1] - box[timestep][1][0]) / 2.0;
-	boxlength[2] = (box[timestep][2][1] - box[timestep][2][0]) / 2.0;
-	double maxlength = pow(boxlength[0]*boxlength[0] + \
-			       boxlength[1]*boxlength[1] + \
-			       boxlength[2]*boxlength[2], 0.5);
-
-	double dx, dy, dz, distance;
+double *vanHove(int interval, int type1, int type2){
 	int counter = 0, idx;
+	int nAtoms = numAtoms[0];
+	double binsize = maxDist / NUMBINS;
+	double dx, dy, dz, distance;
 
-	binsize = maxlength / NUMBINS;
+	double histogram[NUMBINS];
 
-	for (int start = 0; start < numTraj - timestep; start++){
-		for (int i = 0; i < nAtoms; i++){
-			if (atom[timestep][i][1] != type) continue;
-			counter++;
-
-			dx = coord[start + timestep][i][0] - coord[start][i][0];	
-			dy = coord[start + timestep][i][1] - coord[start][i][1];	
-			dz = coord[start + timestep][i][2] - coord[start][i][2];
-
-			dx -= round(dx / boxlength[0]) * boxlength[0];
-			dy -= round(dx / boxlength[1]) * boxlength[1];
-			dz -= round(dx / boxlength[2]) * boxlength[2];
-
-			distance = sqrt(dx*dx + dy*dy + dz*dz);
-			idx = (int)(distance / binsize);
-			if (idx < NUMBINS) histogram[idx] += 1;
+	for (int start = 0; start < numTraj - interval; start++){
+		for (int i = 1; i < nAtoms; i++){
+			for (int j = i + 1; j < nAtoms; j++){
+				dx = coord[start + interval][i][0] - coord[start][i][0];
+				dy = coord[start + interval][i][1] - coord[start][i][1];
+				dz = coord[start + interval][i][2] - coord[start][i][2];
+				distance = dx * dx + dy * dy + dz * dz;
+			}
 		}
 	}
-
-	double *output;
-	output = (double*)malloc(sizeof(double) * NUMBINS);
-
-	double r, dr;
-
-	for (int i = 0; i < NUMBINS; i++){
-		r = (i + 0.5) * binsize;
-		dr = binsize;
-		output[i] = (double)histogram[i] / counter;
-	}
-	return output;
 }
 
 int readTraj(void){
