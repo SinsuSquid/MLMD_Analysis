@@ -6,10 +6,9 @@
 #define LINESIZE 256
 #define MAXTIMESTEP 100000
 #define NUMBINS 1000
-#define MAXPAIR 7
+#define DT 10
 
-#define NUMAL 432
-#define CL_AL 2.85
+#define CL_AL 3.00
 
 int numTraj;
 int timestep[MAXTIMESTEP];
@@ -19,14 +18,20 @@ int ***atom;
 double ***coord;
 double binsize;
 
+double box_x;
+double box_y;
+double box_z;
+
+int numParticles[3];
+
 int readTraj(void);
 
 FILE *fp_in;
 FILE *fp_out;
 
-int **cage;
-void initialize();
-double CCF(int);
+int ***cage;
+void cage_initialize();
+void CCF();
 
 int main(int argc, char *argv[]){
 	fp_in = fopen(argv[1], "r");
@@ -41,18 +46,39 @@ int main(int argc, char *argv[]){
 	printf("\tNumber of Timesteps : %d\n", numTraj);
 	printf("\tNumber of Atoms : %d\n\n", numAtoms[0]);
 
-	/*	Edit Here !	*/
-	initialize();
+	box_x = box[0][0][1] - box[0][0][0];
+	box_y = box[0][1][1] - box[0][1][0];
+	box_z = box[0][2][1] - box[0][2][0];
 
-	fprintf(fp_out, "#\ttimestep\tCage Correlation\n");
-	for (int i = 0; i < numTraj; i++){
-		// printf("%d %lf\n", i, CCF(i));
-		fprintf(fp_out, "%d %lf\n", i, CCF(i));
+	numParticles[0] = 0; numParticles[1] = 0; numParticles[2] = 0;
+
+	for (int i = 0; i < numAtoms[0]; i++){
+		switch(atom[0][i][1]){
+			case 1: numParticles[0]++; break;
+			case 2: numParticles[1]++; break;
+			case 3: numParticles[2]++; break;
+		}
 	}
+
+	printf("\tnumLi : %d\n", numParticles[0]);
+	printf("\tnumCl : %d\n", numParticles[1]);
+	printf("\tnumAl : %d\n", numParticles[2]);
+
+	/***	Edit Here !	***/
+
+	cage = (int ***)malloc(sizeof(int **) * numTraj);
+	for (int i = 0; i < numTraj; i++){ *(cage + i) = (int **)malloc(sizeof(int *) * numParticles[2]); }
+
+
+	printf("\n\tCage Initialization Started ...\n");
+	cage_initialize();
+	printf("\tCage Initialization Complete !\n");
+	printf("\tNow calculating Cage Correlation...\n"); 
+	CCF();
 
 	fclose(fp_out);
 
-	printf("\tAll Tasks are Done ! >:D\n");
+	printf("\n\tAll Tasks are Done ! >:D\n");
 
 	free(atom);
 	free(coord);
@@ -60,101 +86,76 @@ int main(int argc, char *argv[]){
 	return 0;
 }
 
-double CCF(int timestep){
-	double box_x = box[0][0][1] - box[0][0][0];
-	double box_y = box[0][1][1] - box[0][1][0];
-	double box_z = box[0][2][1] - box[0][2][0];
-	double distance, dx, dy, dz;
-	int nAtom = numAtoms[0];
-	int cageIdx = 0;
-	double result = 0.0;
+void CCF(){
+	double dx, dy, dz, distance;
+	double max_dist = CL_AL * CL_AL;
 
-	for (int i = 0; i < nAtom; i++){
-		if (atom[0][i][1] != 3) continue;
-
-		int innerCount = 0;
-		int *response = (int *)malloc(sizeof(int) * MAXPAIR);
-		response[innerCount++] = i;
-
-		for (int j = 0; j < nAtom; j++){
-			if (atom[0][j][1] != 2) continue;
-			dx = coord[timestep][i][0] - coord[timestep][j][0];
-			dy = coord[timestep][i][1] - coord[timestep][j][1];
-			dz = coord[timestep][i][2] - coord[timestep][j][2];
-
-			dx = dx - round(dx / box_x) * box_x;
-			dy = dy - round(dy / box_y) * box_y;
-			dz = dz - round(dz / box_z) * box_z;
-
-			distance = dx * dx + dy * dy + dz * dz;
-
-			if (distance < CL_AL * CL_AL){
-				response[innerCount++] = j;
+	fprintf(fp_out, "#\tt\tCCF(t)\n");
+	for (int t = 0; t < numTraj / 3; t += DT){
+		if (t % 10 == 0) printf("t = %d...\n",t); 
+		double averaged = 0.0;
+		double normal = (double)(numTraj - t) / DT * numParticles[2];
+		for (int start = 0; start < numTraj - t; start += DT){
+			int alIdx = 0;
+			for (int i = 0; alIdx < numParticles[2]; i++){
+				if (atom[t][i][1] != 3) continue;
+				double tCCF = 0.0;
+				double startCCF = 0.0;
+				for (int ii = 0; ii < numParticles[1]; ii++){
+					tCCF += cage[start][alIdx][ii] * cage[start + t][alIdx][ii];
+					startCCF += cage[start][alIdx][ii] * cage[start][alIdx][ii];
+				}
+				alIdx++;
+				// printf("tCCF = %lf\tstartCCF = %lf\n", tCCF, startCCF);
+				averaged += (tCCF / startCCF) / normal;
 			}
 		}
-		
-		int *template = *(cage + cageIdx++);
-
-		int score = 0;
-		for (int j = 0; j < MAXPAIR; j++){
-			if (*(template + j) == *(response + j)){
-				score += 1;
-			}
-		}
-		double correlation = score / MAXPAIR;
-		result += correlation;
+		fprintf(fp_out, "%lf\t%lf\n", (double)t, averaged); fflush(fp_out);
 	}
-	return result / cageIdx;
 }
 
-void initialize(){
-	double box_x = box[0][0][1] - box[0][0][0];
-	double box_y = box[0][1][1] - box[0][1][0];
-	double box_z = box[0][2][1] - box[0][2][0];
-	double distance, dx, dy, dz;
-	int nAtom = numAtoms[0];
+void cage_initialize(){
+	double dx, dy, dz, distance;
+	double max_dist = CL_AL * CL_AL;
+	for (int t = 0; t < numTraj; t++){
+		int alIdx = 0;
+		for (int i = 0; i < numAtoms[t]; i++){
+			if (atom[t][i][1] != 3) continue;
+			int *pairList = (int *)malloc(sizeof(int) * numParticles[1]);
+			int clIdx = 0;
 
-	cage = (int **)malloc(sizeof(int *) * NUMAL);
-	int cageIdx = 0;
+			double ix = coord[t][i][0];
+			double iy = coord[t][i][1];
+			double iz = coord[t][i][2];
 
-	for (int i = 0; i < nAtom; i++){
-		if (atom[0][i][1] != 3) continue;
+			for (int j = 0; j < numAtoms[t]; j++){
+				if (atom[t][j][1] != 2) continue;
+				dx = coord[t][j][0] - ix;
+				dy = coord[t][j][1] - iy;
+				dz = coord[t][j][2] - iz;
 
-		int innerCount = 0;
-		int *tempCage = (int *)malloc(sizeof(int) * MAXPAIR);
-		tempCage[innerCount++] = i;
+				dx -= round(dx / box_x) * box_x;
+				dy -= round(dy / box_y) * box_y;
+				dz -= round(dz / box_z) * box_z;
 
-		for (int j = 0; j < nAtom; j++){
-			if (atom[0][j][1] != 2) continue;
-			dx = coord[0][i][0] - coord[0][j][0];
-			dy = coord[0][i][1] - coord[0][j][1];
-			dz = coord[0][i][2] - coord[0][j][2];
-
-			dx = dx - round(dx / box_x) * box_x;
-			dy = dy - round(dy / box_y) * box_y;
-			dz = dz - round(dz / box_z) * box_z;
-
-			distance = dx * dx + dy * dy + dz * dz;
-
-			if (distance < CL_AL * CL_AL){
-				tempCage[innerCount++] = j;
+				distance = dx*dx + dy*dy + dz*dz;
+				if (distance < max_dist){ pairList[clIdx++] = 1; }
+				else { pairList[clIdx++] = 0; }
 			}
+			cage[t][alIdx++] = pairList;
 		}
-		*(cage + cageIdx) = tempCage;
-
 		/*
-		printf("%d %d %d %d %d\n",
-				*(*(cage + cageIdx) + 0),
-				*(*(cage + cageIdx) + 1),
-				*(*(cage + cageIdx) + 2),
-				*(*(cage + cageIdx) + 3),
-				*(*(cage + cageIdx) + 4));
+		for (int i = 0; i < numParticles[2]; i++){
+			printf("t = %d\talIdx = %d\t\t", t, i);
+			for (int ii = 0; ii < numParticles[1]; ii++){
+				printf("[%1d]", cage[t][i][ii]);
+			}
+			printf("\n");
+		}
 		*/
-
-		cageIdx++;
 	}
-	return;
 }
+
 int readTraj(void){
 	char *iostat;
 	char line[LINESIZE];

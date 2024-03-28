@@ -7,6 +7,9 @@
 #define MAXTIMESTEP 100000
 #define NUMBINS 1000
 #define MAXPAIRS 1000
+#define DT 1
+
+#define CL_AL 3.00
 
 int numTraj;
 int timestep[MAXTIMESTEP];
@@ -16,18 +19,21 @@ int ***atom;
 double ***coord;
 double binsize;
 
+double box_x;
+double box_y;
+double box_z;
+
+int numLi, numCl, numAl;
+
 int readTraj(void);
 
 FILE *fp_in;
 FILE *fp_out;
 
-int **pair;
-int nPairs;
 double ***pairVector;
 
 void initialize();
-void getVectors(int);
-double e2eTCF(int);
+void rotation_correlation();
 
 int main(int argc, char *argv[]){
 	fp_in = fopen(argv[1], "r");
@@ -42,19 +48,26 @@ int main(int argc, char *argv[]){
 	printf("\tNumber of Timesteps : %d\n", numTraj);
 	printf("\tNumber of Atoms : %d\n\n", numAtoms[0]);
 
+	box_x = box[0][0][1] - box[0][0][0];
+	box_y = box[0][1][1] - box[0][1][0];
+	box_z = box[0][2][1] - box[0][2][0];
+
+	numLi = 0; numCl = 0; numAl = 0;
+
+	for (int i = 0; i < numAtoms[0]; i++){
+		switch(atom[0][i][1]){
+			case 1: numLi++; break;
+			case 2: numCl++; break;
+			case 3: numAl++; break;
+		}
+	}
+	printf("\n\tnumLi : %d\n", numLi);
+	printf("\tnumCl : %d\n", numCl);
+	printf("\tnumAl : %d\n", numAl);
+
 	/*	Edit Here !	*/
 	initialize();
-
-	pairVector = (double***)malloc(sizeof(double**) * MAXTIMESTEP);
-
-	for (int i = 0; i < numTraj; i++){
-		getVectors(i);
-	}
-
-	fprintf(fp_out, "#\tStep\tEnd-to-end Time Correlation Function\n");
-	for (int i = 0; i < numTraj; i++){
-		fprintf(fp_out, "%d\t%lf\n", i, e2eTCF(i));
-	}
+	rotation_correlation();
 
 	fclose(fp_out);
 
@@ -66,89 +79,89 @@ int main(int argc, char *argv[]){
 	return 0;
 }
 
-double e2eTCF(int step){
-	double xFactor, yFactor, zFactor;
-	double tcf, tcf_avg;
+void rotation_correlation(){
+	fprintf(fp_out, "#\tt\trotational_correlation(t)"); 
+	for (int t = 0; t < numTraj / 3; t += DT){
+		if (!(t % 10)) printf("t = %d...\n", t);
+		double average = 0.0;
+		double normal = (double)(numTraj - t) / DT * numAl;
+		for (int start = 0; start < numTraj - t; start += DT){
+			int alIdx = 0;
+			for (int i = 0; alIdx < numAl; i++){
+				if (atom[t][i][1] != 3) continue;
+				double distinct_correlation = 0.0;
+				double self_correlation = 0.0;
 
-	tcf_avg = 0.0;
-	for (int i = 0; i < nPairs; i++){
-		xFactor = pairVector[0][i][0] * pairVector[step][i][0];
-		yFactor = pairVector[0][i][1] * pairVector[step][i][1];
-		zFactor = pairVector[0][i][2] * pairVector[step][i][2];
+				distinct_correlation += pairVector[start + t][alIdx][0] * pairVector[start][alIdx][0];
+				distinct_correlation += pairVector[start + t][alIdx][1] * pairVector[start][alIdx][1];
+				distinct_correlation += pairVector[start + t][alIdx][2] * pairVector[start][alIdx][2];
 
-		tcf = xFactor + yFactor + zFactor;
-		tcf_avg += tcf;
+				self_correlation += pairVector[start][alIdx][0] * pairVector[start][alIdx][0];
+				self_correlation += pairVector[start][alIdx][1] * pairVector[start][alIdx][1];
+				self_correlation += pairVector[start][alIdx][2] * pairVector[start][alIdx][2];
+
+				average += distinct_correlation / self_correlation / normal;
+
+				alIdx++;
+			}
+		}
+		fprintf(fp_out, "%lf\t%lf\n", (double)t, average);
 	}
-	tcf_avg /= nPairs;
-
-	return tcf_avg;
-}
-
-void getVectors(int traj){
-	double **perTraj = (double **)malloc(sizeof(double *) * nPairs);
-
-	double dx, dy, dz, normalize;
-	for (int i = 0; i < nPairs; i++){
-		double *perPair = (double *)malloc(sizeof(double) * 3);
-		dx = coord[traj][pair[i][0]][0] - coord[traj][pair[i][1]][0];
-		dy = coord[traj][pair[i][0]][1] - coord[traj][pair[i][1]][1];
-		dz = coord[traj][pair[i][0]][2] - coord[traj][pair[i][1]][2];
-
-		normalize = sqrt(dx * dx + dy * dy + dz * dz);
-
-		*(perPair+0) = dx / normalize;
-		*(perPair+1) = dy / normalize;
-		*(perPair+2) = dz / normalize;
-		*(perTraj + i) = perPair;
-
-		/*
-		printf("dx : %lf dy : %lf dz : %lf\n", 
-				*(*(perTraj + i) + 0),
-				*(*(perTraj + i) + 1),
-				*(*(perTraj + i) + 2));
-		*/
-	}
-	*(pairVector + traj) = perTraj;
-
-	return;
 }
 
 void initialize(){
-	double distance, dx, dy, dz;
-	int nAtom = numAtoms[0];
+	double max_dist = CL_AL * CL_AL;
 
-	nPairs = 0;
-	pair = (int**)malloc(sizeof(int *) * MAXPAIRS);
+	pairVector = (double ***)malloc(sizeof(double **) * numTraj);
 
-	for (int i = 0; i < nAtom; i++){
-		if (atom[0][i][1] != 3) continue;
+	for (int t = 0; t < numTraj; t++){
 
-		int minId = 0;
-		double minDist = 0.0;
-		minDist += (box[0][0][1] - box[0][0][0]) * (box[0][0][1] - box[0][0][0]);
-		minDist += (box[0][1][1] - box[0][1][0]) * (box[0][1][1] - box[0][1][0]);
-		minDist += (box[0][2][1] - box[0][2][0]) * (box[0][2][1] - box[0][2][0]);
+		double **pairPerT = (double **)malloc(sizeof(double *) * numAl);
+		int alIdx = 0;
 
-		int *tempPair = (int*)malloc(sizeof(int) * 2);
+		for (int i = 0; alIdx < numAl; i++){
+			if (atom[t][i][1] != 3) continue;
 
-		for (int j = 0; j < nAtom; j++){
-			if (atom[0][j][1] != 2) continue;
-			dx = coord[0][i][0] - coord[0][j][0];
-			dy = coord[0][i][1] - coord[0][j][1];
-			dz = coord[0][i][2] - coord[0][j][2];
-			distance = dx * dx + dy * dy + dz * dz;
+			double *tempPair = (double *)malloc(sizeof(double) * 3);
 
-			if (distance < minDist){
-				minId = j;
-				minDist = distance;
+			double ix = coord[t][i][0];
+			double iy = coord[t][i][1];
+			double iz = coord[t][i][2];
+
+			for (int j = 0; j < numAtoms[0]; j++){
+				if (atom[t][j][1] != 2) continue;
+
+				double dx = coord[t][j][0] - ix;
+				double dy = coord[t][j][1] - iy;
+				double dz = coord[t][j][2] - iz;
+
+				dx -= round(dx / box_x) * box_x;
+				dy -= round(dy / box_y) * box_y;
+				dz -= round(dz / box_z) * box_z;
+
+				double distance = dx * dx + dy * dy + dz * dz;
+
+				if (distance < max_dist){
+					tempPair[0] = dx;
+					tempPair[1] = dy;
+					tempPair[2] = dz;
+					pairPerT[alIdx++] = tempPair;
+					break;
+				}
 			}
 		}
-		*tempPair = i;
-		*(tempPair+1) = minId;
-		*(pair+nPairs++) = tempPair;
+		pairVector[t] = pairPerT;
 	}
-	return;
+	/*
+	for (int i = 0; i < numTraj; i++){
+		for (int j = 0; j < numAl; j++){
+			printf("t = %d\talIdx = %d\t[%10.6f %10.6f %10.6f]\n",
+					i, j, pairVector[i][j][0], pairVector[i][j][1], pairVector[i][j][2]);
+		}
+	}
+	*/
 }
+
 int readTraj(void){
 	char *iostat;
 	char line[LINESIZE];
