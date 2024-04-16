@@ -191,7 +191,7 @@ void vanHove_diffusion(){
 		for (int i = 0; i < NUMBINS; i++) temp[i] = 0.0;
 		for (int start = 0; start < numTraj - t; start += DELTA_T){
 			int liIdx = 0;
-			double normal = (double)(numTraj - t) / DELTA_T * numLi;
+			double normal = (double)(numTraj - t) / DELTA_T * numLi * binsize;
 			for (int i = 0; liIdx < numLi; i++){
 				if (atom[t][i][1] != 1) continue;
 				double dx = coord[start + t][i][0] - coord[start][i][0];

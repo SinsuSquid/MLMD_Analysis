@@ -114,15 +114,6 @@ void intermediate_scattering(int numk, double *k_list){
 	fprintf(fp_intermediate_self, "\n");
 	fprintf(fp_intermediate_distinct, "\n");
 
-	fprintf(fp_intermediate_self, "%lf", 0.0001);
-	fprintf(fp_intermediate_distinct, "%lf", 0.0001);
-	for (int i = 0; i < numk; i++){
-		fprintf(fp_intermediate_self, "\t%lf", 1.0);
-		fprintf(fp_intermediate_distinct, "\t%lf", 1.0);
-	}
-	fprintf(fp_intermediate_self, "\n");
-	fprintf(fp_intermediate_distinct, "\n");
-
 	for (int t = DELTA_T; t < maxTraj; t += DELTA_T){
 		if (t % 100 == 0) printf("t = %d ...\n", t);
 
@@ -136,17 +127,17 @@ void intermediate_scattering(int numk, double *k_list){
 			vanHove_distinct[i] = 0;
 		}
 		// double particle = (double)(numParticles[0] + numParticles[1] + numParticles[2]);
-		double particle = (double)(numParticles[2]);
+		double particle = (double)(numParticles[0]);
 
 		for (int start = 0; start < numTraj - t; start += DELTA_T){
 			for (int i = 0; i < nAtoms; i++){
-				if (atom[start][i][1] != 3) continue;
+				if (atom[start][i][1] != 1) continue;
 				ix = coord[start][i][0];
 				iy = coord[start][i][1];
 				iz = coord[start][i][2];
 				// for (int j = 0; j < nAtoms; j++){
 				for (int j = i; j < i+1; j++){
-					if (atom[start + t][j][1] != 3) continue;
+					if (atom[start + t][j][1] != 1) continue;
 					dx = coord[start + t][j][0] - ix;
 					dy = coord[start + t][j][1] - iy;
 					dz = coord[start + t][j][2] - iz;
@@ -155,8 +146,10 @@ void intermediate_scattering(int numk, double *k_list){
 					idx = (int)(distance / binsize);
 					normal = (double)(numTraj - t) / DELTA_T * binsize;
 
-					if (i == j){ vanHove_self[idx] += 1 / normal; }
-					else { vanHove_distinct[idx] += 1 / normal; }
+					if (idx < NUMBINS){
+						if (i == j){ vanHove_self[idx] += 1 / normal; }
+						else { vanHove_distinct[idx] += 1 / normal; }
+					}
 				}
 			}
 		}
