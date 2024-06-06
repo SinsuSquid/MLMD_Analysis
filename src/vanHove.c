@@ -22,21 +22,24 @@ int readTraj(void);
 
 FILE *fp_in;
 FILE *fp_vanHove_diffusion;
+FILE *fp_vanHove_Al;
 FILE *fp_vanHove_rotation;
 
 void vanHove_diffusion();
+void vanHove_Al();
 void vanHove_rotation();
 
 double get_angle(double *, double *);
 
 int main(int argc, char *argv[]){
-	if (argc != 4){
-		printf("USAGE : ./scattering.x ***.lammpstrj vanHove_diffusion.out vanHove_rotation.out\n");
+	if (argc != 5){
+		printf("USAGE : ./scattering.x ***.lammpstrj vanHove_diffusion.out vanHove_Al.out vanHove_rotation.out\n");
 		exit(1);
 	}
 	fp_in = fopen(argv[1], "r");
 	fp_vanHove_diffusion = fopen(argv[2], "w");
-	fp_vanHove_rotation = fopen(argv[3], "w");
+	fp_vanHove_Al = fopen(argv[3], "w");
+	fp_vanHove_rotation = fopen(argv[4], "w");
 
 	atom = (int***)malloc(sizeof(int**) * MAXTIMESTEP);
 	coord = (double***)malloc(sizeof(double**) * MAXTIMESTEP);
@@ -68,6 +71,7 @@ int main(int argc, char *argv[]){
 	printf("\n");
 
 	vanHove_diffusion();
+	vanHove_Al();
 	vanHove_rotation();
 
 	free(atom);
@@ -181,7 +185,7 @@ double get_angle(double *r_0, double *r_t){
 }
 
 void vanHove_diffusion(){
-	printf("\tNow Gs(r,t) ...\n");
+	printf("\tNow Gs(r,t) for Li...\n");
 	double **diffusion = (double **)malloc(sizeof(double *) * (numTraj / 3));
 	double binsize = 10.0 / NUMBINS;
 
@@ -213,6 +217,42 @@ void vanHove_diffusion(){
 			fprintf(fp_vanHove_diffusion, " %10.6lf", diffusion[i][j]);
 		}
 		fprintf(fp_vanHove_diffusion, "\n");
+	}
+}
+
+void vanHove_Al(){
+	printf("\tNow Gs(r,t) for Al...\n");
+	double **diffusion = (double **)malloc(sizeof(double *) * (numTraj / 3));
+	double binsize = 10.0 / NUMBINS;
+
+	for(int t = 0; t < numTraj / 3; t += DELTA_T){
+		if (!(t % 100)) printf("\t t = %d...\n", t);
+		double *temp = (double *)malloc(sizeof(double) * NUMBINS);
+		for (int i = 0; i < NUMBINS; i++) temp[i] = 0.0;
+		for (int start = 0; start < numTraj - t; start += DELTA_T){
+			int alIdx = 0;
+			double normal = (double)(numTraj - t) / DELTA_T * numAl * binsize;
+			for (int i = 0; alIdx < numAl; i++){
+				if (atom[t][i][1] != 3) continue;
+				double dx = coord[start + t][i][0] - coord[start][i][0];
+				double dy = coord[start + t][i][1] - coord[start][i][1];
+				double dz = coord[start + t][i][2] - coord[start][i][2];
+
+				double distance = sqrt(dx * dx + dy * dy + dz * dz);
+
+				int idx = (int)(distance / binsize);
+				if (idx < NUMBINS){ temp[idx] += 1.0 / normal; }
+				alIdx++;
+			}
+		}
+		diffusion[t / DELTA_T] = temp;
+	}
+
+	for (int i = 0; i < (numTraj / 3) / DELTA_T; i++){
+		for (int j = 0; j < NUMBINS; j++){
+			fprintf(fp_vanHove_Al, " %10.6lf", diffusion[i][j]);
+		}
+		fprintf(fp_vanHove_Al, "\n");
 	}
 }
 
