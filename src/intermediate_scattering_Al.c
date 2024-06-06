@@ -225,7 +225,7 @@ int readTraj(void){
 			        box[numTraj][2][0], box[numTraj][2][1]);
 			*/
 		}
-		else if (strcmp(line, "ITEM: ATOMS x y z type id ix iy iz\n") == 0){
+		else if (strcmp(line, "ITEM: ATOMS id type x y z\n") == 0){
 			double x, y, z;
 			int type, id, ix, iy, iz;
 
@@ -244,16 +244,16 @@ int readTraj(void){
 				double *coordTemp;
 				coordTemp = (double*)malloc(sizeof(double) * 3);
 
-				fscanf(fp_in, "%lf %lf %lf %d %d %d %d %d",
-				       &x, &y, &z, &type, &id, &ix, &iy, &iz);
+				fscanf(fp_in, "%d %d %lf %lf %lf",
+				       &id, &type, &x, &y, &z);
 
 				atomTemp[0] = id;
 				atomTemp[1] = type;
 				atomPerTraj[i] = atomTemp;
 
-				coordTemp[0] = ix * boxlength[0] + x;
-				coordTemp[1] = iy * boxlength[1] + y;
-				coordTemp[2] = iz * boxlength[2] + z;
+				coordTemp[0] = x;
+				coordTemp[1] = y;
+				coordTemp[2] = z;
 				coordPerTraj[i] = coordTemp;
 
 				/*
