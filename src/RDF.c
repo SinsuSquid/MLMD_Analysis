@@ -7,11 +7,6 @@
 #define MAXTIMESTEP 100000
 #define NUMBINS 1000
 
-#define NUMLI 432
-#define NUMCL 1728
-#define NUMAL 432
-#define TOTALATOM 2592
-
 int numTraj;
 int timestep[MAXTIMESTEP];
 int numAtoms[MAXTIMESTEP];
@@ -19,6 +14,8 @@ double box[MAXTIMESTEP][3][2];
 int ***atom;
 double ***coord;
 double binsize;
+
+int numLi, numCl, numAl;
 
 int readTraj(void);
 double *radial(int);
@@ -39,6 +36,20 @@ int main(int argc, char *argv[]){
 	printf("\n\t\t< FILE SUMMARY >\n\n");
 	printf("\tNumber of Timesteps : %d\n", numTraj);
 	printf("\tNumber of Atoms : %d\n\n", numAtoms[0]);
+
+	numLi = 0; numCl = 0; numAl = 0;
+	for (int i = 0; i < numAtoms[0]; i++){
+		switch(atom[0][i][1]){
+			case 1: numLi += 1; break;
+			case 2: numCl += 1; break;
+			case 3: numAl += 1; break;
+		}
+	}
+
+	printf("numLi = %d\n", numLi);
+	printf("numCl = %d\n", numAl);
+	printf("numAl = %d\n", numCl);
+	printf("\n");
 
 	double *rdf_global;
 	rdf_global = (double*)malloc(sizeof(double) * NUMBINS);
@@ -147,7 +158,7 @@ double *radial_type(int timestep, int type1, int type2){
 		}
 	}
 
-	int typeCount[] = {0, NUMLI, NUMCL, NUMAL};
+	int typeCount[] = {0, numLi, numCl, numAl};
 	double density = \
 		(typeCount[type1] * typeCount[type2] * 2.0) \
 		/ (boxlength[0] * boxlength[1] * boxlength[2]);
