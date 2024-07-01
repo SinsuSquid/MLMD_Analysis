@@ -2,7 +2,7 @@
 #include <stdlib.h>
 #include <math.h>
 
-#define BUFFERSIZE 1000
+#define BUFFERSIZE 10000
 
 typedef struct{
 	float x, y, z;

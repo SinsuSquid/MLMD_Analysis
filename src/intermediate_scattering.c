@@ -5,7 +5,7 @@
 
 #define LINESIZE 256
 #define MAXTIMESTEP 100000
-#define NUMK 5
+#define NUMK 6
 #define NUMBINS 10000
 #define DELTA_T 1
 
@@ -70,7 +70,7 @@ int main(int argc, char *argv[]){
 	printf("numAl = %d\n", numParticles[2]);
 	printf("\n");
 
-	double k_list[NUMK] = {1.0, 2.0, 3.0, 4.0, 5.0};
+	double k_list[NUMK] = {0.5, 1.0, 2.0, 3.0, 4.0, 5.0};
 
 	intermediate_scattering(NUMK, k_list);
 
