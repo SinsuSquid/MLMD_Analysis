@@ -8,8 +8,6 @@
 #define NUMBINS 1000
 #define DELTA_T 1
 
-#define CL_AL 2.85
-
 int numTraj;
 int timestep[MAXTIMESTEP];
 int numAtoms[MAXTIMESTEP];
@@ -25,21 +23,22 @@ int readTraj(void);
 FILE *fp_in;
 FILE *fp_out;
 
-double get_angle(double *, double *);
-
-int **cluster;
-
+// distList[atomIdx][start][t]
+int deltaT;
+double ***avgPosA;
+double ***avgPosB;
+double getDistance(double *, double *);
 void initialize();
-void sort_cluster();
-int updateChecker(int, int *, int *);
+void hop_function();
 
 int main(int argc, char *argv[]){
-	if (argc != 3){
-		printf("USAGE : ./clustering.x ***.lammpstrj cluster_size.out\n");
+	if (argc != 4){
+		printf("USAGE : ./hop.x ***.lammpstrj DELTA_T hop.out\n");
 		exit(1);
 	}
 	fp_in = fopen(argv[1], "r");
-	fp_out = fopen(argv[2], "w");
+	deltaT = atoi(argv[2]);
+	fp_out = fopen(argv[3], "w");
 
 	atom = (int***)malloc(sizeof(int**) * MAXTIMESTEP);
 	coord = (double***)malloc(sizeof(double**) * MAXTIMESTEP);
@@ -50,6 +49,7 @@ int main(int argc, char *argv[]){
 	printf("\tNumber of Timesteps : %d\n", numTraj);
 	printf("\tNumber of Atoms : %d\n\n", numAtoms[0]);
 
+	// Don't use this w/ NpT !
 	box_x = (box[0][0][1] - box[0][0][0]);
 	box_y = (box[0][1][1] - box[0][1][0]);
 	box_z = (box[0][2][1] - box[0][2][0]);
@@ -71,7 +71,7 @@ int main(int argc, char *argv[]){
 	printf("\n");
 
 	initialize();
-	sort_cluster();
+	hop_function();
 
 	free(atom);
 	free(coord);
@@ -81,120 +81,81 @@ int main(int argc, char *argv[]){
 	return 0;
 }
 
-void sort_cluster(){
-	printf("\tNow Sorting Cluster List ...\n");
-	fprintf(fp_out, "#\tt\tnumCluster\tmaxClusterSize\n");
+double getDistance(double *coord1, double *coord2){
+	double dx = coord1[0] - coord2[0];
+	double dy = coord1[1] - coord2[1];
+	double dz = coord1[2] - coord2[2];
 
-	int nAtom = numLi + numCl + numAl;
-	for (int t = 0; t < numTraj; t++){
-		// Count number of clusters;
-		int *counter = (int *)malloc(sizeof(int) * nAtom);
-		for (int i = 0; i < nAtom; i++) counter[i] = 0; // Initialize
-		for (int i = 0; i < nAtom; i++) counter[cluster[t][i]] += 1;
-		int numCluster = 0, maxClusterSize = 0;
+	dx -= round(dx / box_x) * box_x;
+	dy -= round(dy / box_y) * box_y;
+	dz -= round(dz / box_z) * box_z;
 
-		for (int i = 0; i < nAtom; i++){
-			if (counter[i] != 0) numCluster += 1;
-			if (maxClusterSize < counter[i]) maxClusterSize = counter[i];
-		}
-
-		int clusterId = 0;
-		int *newCluster = (int *)malloc(sizeof(int) * nAtom);
-		for (int i = 0; i < nAtom; i++) newCluster[i] = -1;
-
-		for (int i = 0; i < nAtom; i++){
-			if (counter[i] != 0){
-				for (int ii = 0; ii < nAtom; ii++){
-					if (cluster[t][ii] == i) newCluster[ii] = clusterId;
-				}
-				clusterId++;
-			}	
-		}
-
-		// printf("\nclusterCount : %d\tclusterId : %d\n", numCluster, clusterId);
-
-		cluster[t] = newCluster;
-		fprintf(fp_out, "%d\t%d\t%d\n", t, numCluster, maxClusterSize);
-		/*
-		printf("\ncluster[%d] : ", t);
-		for (int i = 0; i < nAtom; i++){
-			printf("%d ", cluster[t][i]);
-		}
-		*/
-	}
+	return dx * dx + dy * dy + dz * dz;
 }
 
 void initialize(){
-	printf("\tNow Initializing Cluster List ...\n");
+	printf("\t Now Initializing Averaged Position ...\n");
 
-	double maxDist = CL_AL * CL_AL;
-	int nAtom = numLi + numCl + numAl;
+	int GAP = deltaT / 2; printf("\tGAP = %d\n", GAP);
 
-	cluster = (int **)malloc(sizeof(int *) * numTraj);
+	avgPosA = (double ***)malloc(sizeof(double **) * numTraj);
+	avgPosB = (double ***)malloc(sizeof(double **) * numTraj);
 
-	for (int t = 0; t < numTraj; t++){
-		if (!(t % 100)) printf("\t t = %d...\n", t);
+	for (int t = GAP; t < numTraj - GAP; t++){
+		double **tempPosA = (double **)malloc(sizeof(double *) * numLi);
+		double **tempPosB = (double **)malloc(sizeof(double *) * numLi);
 
-		box_x = box[t][0][1] - box[t][0][0];
-		box_y = box[t][1][1] - box[t][1][0];
-		box_z = box[t][2][1] - box[t][2][0];
+		for (int idx = 0; idx < numLi; idx++){
+			double *pA = (double *)malloc(sizeof(double) * 3);
+			double *pB = (double *)malloc(sizeof(double) * 3);
 
-		int *oldCluster = (int *)malloc(sizeof(int) * nAtom);
-		int *newCluster = (int *)malloc(sizeof(int) * nAtom);
-		int idx = 0;
-		for (int i = 0; i < nAtom; i++){
-			if (atom[t][i][1] == 1){ // Li+ is not part of cluster
-				oldCluster[i] = -1; newCluster[i] = -1;
-			}
-			else{
-				oldCluster[i] = idx; newCluster[i] = idx;
-				idx++;
-			}
-		}
-		
-		for (int iter = 0; ; iter++){
-			// update cluster list
-			for (int i = numLi; i < nAtom; i++){
-				double ix = coord[t][i][0];
-				double iy = coord[t][i][1];
-				double iz = coord[t][i][2];
-
-				for (int j = numLi; j < nAtom; j++){
-					double dx = coord[t][j][0] - ix;
-					double dy = coord[t][j][1] - iy;
-					double dz = coord[t][j][2] - iz;
-
-					dx -= round(dx / box_x) * box_x;
-					dy -= round(dy / box_y) * box_y;
-					dz -= round(dz / box_z) * box_z;
-
-					double distance = dx * dx + dy * dy + dz * dz;
-
-					if (distance < maxDist){ // i and j are in the same cluster
-						if (newCluster[i] < newCluster[j]) newCluster[j] = newCluster[i];
-						else newCluster[i] = newCluster[j];
-					}
-				}
+			for (int dt = 0; dt < GAP; dt++){
+				pA[0] += coord[t - dt][idx][0]; pA[1] += coord[t - dt][idx][1]; pA[2] += coord[t - dt][idx][2];
+				pB[0] += coord[t + dt][idx][0]; pB[1] += coord[t + dt][idx][1]; pB[2] += coord[t + dt][idx][2];
 			}
 
-			// Stops when there's no more updates
-			if (updateChecker(nAtom, oldCluster, newCluster) == 0) break;
-			// Copy cluster
-			for (int i = 0; i < nAtom; i++) oldCluster[i] = newCluster[i];
+			for (int i = 0; i < 3; i++) { pA[i] /= GAP; pB[i] /= GAP; }
+			// printf("pA[%d][%d] = [%lf, %lf, %lf]\t pB[%d][%d] = [%lf, %lf, %lf]\n", t, idx, pA[0], pA[1], pA[2], t, idx, pB[0], pB[1], pB[2]);
+
+			tempPosA[idx] = pA;
+			tempPosB[idx] = pB;
 		}
-		cluster[t] = oldCluster;
-		/*
-		printf("\ncluster[%d] : ", t);
-		for (int i = 0; i < nAtom; i++){
-			printf("%d ", cluster[t][i]);
-		}
-		*/
-	}
+		avgPosA[t] = tempPosA;
+		avgPosB[t] = tempPosB;
+	} 
 }
 
-int updateChecker(int nAtom, int *old, int *new){ // returns 1 if two arrays are different
-	for (int i = 0; i < nAtom; i++) { if (old[i] != new[i]) return 1; }
-	return 0;
+void hop_function(){
+	printf("\tNow Calculating Hop Function ...\n");
+	int GAP = deltaT / 2; printf("\tGAP = %d\n", GAP);
+	fprintf(fp_out, "#\tt\tatomIdx\n");
+
+	double **hop = (double **)malloc(sizeof(double *) * numTraj);
+	for (int t = GAP + GAP; t < numTraj - GAP - GAP; t++){
+		double *perTime = (double *)malloc(sizeof(double) * numLi);
+
+		box_x = (box[t][0][1] - box[t][0][0]);
+		box_y = (box[t][1][1] - box[t][1][0]);
+		box_z = (box[t][2][1] - box[t][2][0]);
+
+		for (int idx = 0; idx < numLi; idx++){
+			double dA = 0.0; double dB = 0.0;
+			for (int dt = 0; dt < GAP; dt++){
+				dB += getDistance(coord[t + dt][idx], avgPosA[t + dt][idx]);
+				dA += getDistance(coord[t - dt][idx], avgPosB[t - dt][idx]);
+			}
+			dA /= GAP; dB /= GAP;
+			// printf("dA[%d][%d] = %lf\tdB[%d][%d] = %lf\n", t, idx, dA, t, idx, dB);
+			perTime[idx] = sqrt(dA * dB);
+		}
+		hop[t] = perTime;
+
+		fprintf(fp_out, "%d\t", t);
+		for (int i = 0; i < numLi; i++){
+			fprintf(fp_out, "%lf\t",  hop[t][i]);
+		}
+		fprintf(fp_out, "\n");
+	}
 }
 
 int readTraj(void){
