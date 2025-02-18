@@ -5,7 +5,7 @@
 
 #define LINESIZE 256
 #define MAXTIMESTEP 100000
-#define NUMK 5
+#define NUMK 6
 #define NUMBINS 10000
 #define DELTA_T 1
 
@@ -70,7 +70,7 @@ int main(int argc, char *argv[]){
 	printf("numAl = %d\n", numParticles[2]);
 	printf("\n");
 
-	double k_list[NUMK] = {1.0, 2.0, 3.0, 4.0, 5.0};
+	double k_list[NUMK] = {0.5, 1.0, 2.0, 3.0, 4.0, 5.0};
 
 	intermediate_scattering(NUMK, k_list);
 
@@ -114,15 +114,6 @@ void intermediate_scattering(int numk, double *k_list){
 	fprintf(fp_intermediate_self, "\n");
 	fprintf(fp_intermediate_distinct, "\n");
 
-	fprintf(fp_intermediate_self, "%lf", 0.0001);
-	fprintf(fp_intermediate_distinct, "%lf", 0.0001);
-	for (int i = 0; i < numk; i++){
-		fprintf(fp_intermediate_self, "\t%lf", 1.0);
-		fprintf(fp_intermediate_distinct, "\t%lf", 1.0);
-	}
-	fprintf(fp_intermediate_self, "\n");
-	fprintf(fp_intermediate_distinct, "\n");
-
 	for (int t = DELTA_T; t < maxTraj; t += DELTA_T){
 		if (t % 100 == 0) printf("t = %d ...\n", t);
 
@@ -155,8 +146,10 @@ void intermediate_scattering(int numk, double *k_list){
 					idx = (int)(distance / binsize);
 					normal = (double)(numTraj - t) / DELTA_T * binsize;
 
-					if (i == j){ vanHove_self[idx] += 1 / normal; }
-					else { vanHove_distinct[idx] += 1 / normal; }
+					if (idx < NUMBINS){
+						if (i == j){ vanHove_self[idx] += 1 / normal; }
+						else { vanHove_distinct[idx] += 1 / normal; }
+					}
 				}
 			}
 		}
