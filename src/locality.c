@@ -31,6 +31,7 @@ FILE *fp_distance;
 void vanHove_diffusion();
 void vanHove_rotation();
 void locality_analysis();
+void locality_analysis_time();
 
 double get_angle(double *, double *);
 
@@ -89,7 +90,8 @@ int main(int argc, char *argv[]){
 		fprintf(fp_event, "%d\t%lf\t%lf\n", t, diffusion_prob, rotation_prob);
 	}
 
-	locality_analysis();
+	// locality_analysis();
+	locality_analysis_time();
 
 	free(atom);
 	free(coord);
@@ -99,25 +101,38 @@ int main(int argc, char *argv[]){
 	return 0;
 }
 
-void locality_analysis(){
+void locality_analysis_time(){
 	printf("\tNow Analysing Event Locality...\n");
 	double histogram[NUMBINS];
 	for (int i = 0; i < NUMBINS; i++) histogram[i] = 0.0;
 	double binsize = 20.0 / NUMBINS;
 
 	int t = 112;
+	int GAP = 5;
 	double volume = box_x * box_y * box_z;
+
 	int effective = 0;
 
-	for (int start = 0; start < numTraj - t; start += DELTA_T){
-		int perStart[NUMBINS];
+	for (int start = GAP; start < numTraj - t - GAP; start += DELTA_T){
+		long perStart[NUMBINS];
 		for (int i = 0; i < NUMBINS; i++) perStart[i] = 0;
 
-		int diffusionCnt = 0; int rotationCnt = 0;
+		int numDiffused = 0; int numRotated = 0;
+
 		for (int i = 0; i < numLi; i++){
-			if (!event_diffusion[t][start][i]) continue; diffusionCnt++;
+			if (!event_diffusion[t][start][i]) continue;
+			numDiffused++;
+
 			for (int ii = 0; ii < numAl; ii++){
-				if (!event_rotation[t][start][ii]) continue; rotationCnt++;
+				int rotated = 0;
+				for (int iii = -GAP; iii < GAP; iii++){
+					if (event_rotation[t][start+iii][ii]){
+						rotated = 1;
+						break;
+					}
+				}
+				if (!rotated) continue;
+				numRotated++;
 
 				double dx = coord[start][i][0] - coord[start][ii + numLi + numCl][0];
 				double dy = coord[start][i][1] - coord[start][ii + numLi + numCl][1];
@@ -132,28 +147,89 @@ void locality_analysis(){
 				if (idx < NUMBINS) perStart[idx] += 1;
 			}
 		}
+		if (numDiffused != 0 && numRotated != 0) effective++;
 
-		if (diffusionCnt * rotationCnt){
-			effective++;
-			// double density = diffusionCnt * rotationCnt;
-			double density = rotationCnt;
-			density /= volume;
+		double density = numRotated / numDiffused / volume;
+		for (int i = 0; i < NUMBINS; i++){
+			double value = (double)perStart[i];
+			value /= numDiffused;
+			value /= density;
 
-			for (int i = 0; i < NUMBINS; i++){
-				double distance = (i + 0.5) * binsize;
-				double value = perStart[i];
-				value /= 4.0 * M_PI * distance * distance * binsize;
-				value /= density;
-
-				histogram[i] += value;
-			}
+			histogram[i] += value;
 		}
 	}
 
 	fprintf(fp_distance, "#\tr\tg(r)\n");
 	for (int i = 0; i < NUMBINS; i++){
 		double distance = (i + 0.5) * binsize;
-		fprintf(fp_distance, "%lf\t%lf\n", distance, histogram[i] / effective);
+		double value = histogram[i];
+		value /= 4.0 * M_PI * distance * distance * binsize;
+		value /= (double)effective;
+		fprintf(fp_distance, "%lf\t%lf\n", distance, value);
+	}
+
+	return;
+}
+
+void locality_analysis(){
+	printf("\tNow Analysing Event Locality...\n");
+	long histogram[NUMBINS];
+	for (int i = 0; i < NUMBINS; i++) histogram[i] = 0;
+	double binsize = 20.0 / NUMBINS;
+
+	int t = 112;
+
+	int *diffused = (int*)malloc(sizeof(int) * numLi); int numDiffused = 0;
+	for (int i = 0; i < numLi; i++) diffused[i] = 0;
+	int *rotated = (int*)malloc(sizeof(int) * numAl); int numRotated = 0;
+	for (int i = 0; i < numAl; i++) rotated[i] = 0;
+
+	for (int start = 0; start < numTraj - t; start += DELTA_T){
+		for (int i = 0; i < numLi; i++)
+			if (diffused[i] == 0 && event_diffusion[t][start][i] == 1) diffused[i] = 1;
+		for (int i = 0; i < numAl; i++)
+			if (rotated[i] == 0 && event_rotation[t][start][i] == 1) rotated[i] = 1;
+	}
+
+	for (int i = 0; i < numLi; i++)
+		if (diffused[i] == 1) numDiffused++;
+	for (int i = 0; i < numAl; i++)
+		if (rotated[i] == 1) numRotated++;
+
+	for (int start = 0; start < numTraj - t; start += DELTA_T){
+		for (int i = 0; i < numLi; i++){
+			if (!diffused[i]) continue;
+			for (int ii = 0; ii < numAl; ii++){
+				if (!rotated[ii]) continue;
+
+				double dx = coord[start][i][0] - coord[start][ii + numLi + numCl][0];
+				double dy = coord[start][i][1] - coord[start][ii + numLi + numCl][1];
+				double dz = coord[start][i][2] - coord[start][ii + numLi + numCl][2];
+
+				dx -= round(dx / box_x) * box_x;
+				dy -= round(dy / box_y) * box_y;
+				dz -= round(dz / box_z) * box_z;
+
+				double distance = sqrt(dx * dx + dy * dy + dz * dz);
+				int idx = (int)(distance / binsize);
+				if (idx < NUMBINS) histogram[idx] += 1;
+			}
+		}
+	}
+
+	fprintf(fp_distance, "#\tr\tg(r)\n");
+	double volume = box_x * box_y * box_z;
+	double density = numRotated / volume;
+	for (int i = 0; i < NUMBINS; i++){
+		double distance = (i + 0.5) * binsize;
+		double value = (double)histogram[i];
+		value /= numTraj - t;
+		value /= numDiffused;
+		value /= 4.0 * M_PI * distance * distance * binsize;
+
+		value /= density;
+
+		fprintf(fp_distance, "%lf\t%lf\n", distance, value);
 	}
 
 	return;
