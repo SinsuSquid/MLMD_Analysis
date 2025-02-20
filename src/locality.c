@@ -8,6 +8,7 @@
 #define NUMBINS 1000
 #define DELTA_T 1
 #define H_STAR 3.5
+#define SHELL 5.145
 
 int numTraj;
 int timestep[MAXTIMESTEP];
@@ -32,6 +33,7 @@ void vanHove_diffusion();
 void vanHove_rotation();
 void locality_analysis();
 void locality_analysis_time();
+void locality_analysis_event();
 
 double get_angle(double *, double *);
 
@@ -91,7 +93,8 @@ int main(int argc, char *argv[]){
 	}
 
 	// locality_analysis();
-	locality_analysis_time();
+	// locality_analysis_time();
+	locality_analysis_event();
 
 	free(atom);
 	free(coord);
@@ -99,6 +102,43 @@ int main(int argc, char *argv[]){
 	printf("\tAll Tasks are Done ! >:D\n");
 
 	return 0;
+}
+
+void locality_analysis_event(){
+	printf("\tNow Analysing Event Locality...\n");
+	double shell = SHELL * SHELL;
+	int GAP = 10;
+	int t = 1;
+
+	fprintf(fp_distance, "#\tr\tP(t)\n");
+	fprintf(stdout, "\n\t#\tr\tP(t)\n");
+	int numDiffused = 0; int numCorrelated = 0;
+	for (int start = GAP; start < numTraj - t; start++){
+		for (int i = 0; i < numLi; i++){
+			if (!event_diffusion[t][start][i]) continue;
+			numDiffused++;
+
+			int correlated = 0;
+			for (int ii = 0; ii < numAl && correlated == 0; ii++){
+				double dx = coord[start][i][0] - coord[start][ii + numLi + numCl][0];
+				double dy = coord[start][i][1] - coord[start][ii + numLi + numCl][1];
+				double dz = coord[start][i][2] - coord[start][ii + numLi + numCl][2];
+
+				dx -= round(dx / box_x) * box_x;
+				dy -= round(dy / box_y) * box_y;
+				dz -= round(dz / box_z) * box_z;
+
+				double distance = dx * dx + dy * dy + dz * dz;
+				if (distance < shell){
+					if (event_rotation[GAP][start-GAP][ii] == 1){ correlated = 1; break; }
+				}
+			}
+			if (correlated) numCorrelated++;
+		}
+	}
+	fprintf(fp_distance, "%d\t%10.8lf\n", t, (double)numCorrelated / numDiffused);
+	fprintf(stdout, "\t%d\t%10.8lf\n", t, (double)numCorrelated / numDiffused);
+	return;
 }
 
 void locality_analysis_time(){
